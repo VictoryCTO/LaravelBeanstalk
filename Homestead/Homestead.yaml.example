@@ -1,0 +1,20 @@
+ip: 10.10.99.100
+version: 5.0.1
+memory: 4096
+cpus: 1
+provider: virtualbox
+authorize: ~/.ssh/id_rsa.pub
+keys:
+    - ~/.ssh/id_rsa
+folders:
+    -
+        map: ~/code/laravel-blank
+        to: /home/vagrant/code
+sites:
+    -
+        map: laravel-blank.test
+        to: /home/vagrant/code/public
+databases:
+    - homestead
+name: laravel-blank
+hostname: laravel-blank

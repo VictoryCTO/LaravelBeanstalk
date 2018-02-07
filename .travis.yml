@@ -1,0 +1,86 @@
+language: php
+addons:
+  apt:
+    packages:
+     - oracle-java9-set-default
+php:
+- '7.1'
+jdk:
+  - oraclejdk8
+services:
+- mysql
+sudo: required
+dist: trusty
+group: deprecated-2017Q4
+before_install:
+- mysql -e 'CREATE DATABASE homestead;'
+before_script:
+- cp .env.travis .env
+- composer install --prefer-dist --no-interaction
+- php artisan cache:clear
+- php artisan key:generate
+- nvm install 7.7.1
+- npm install -s npm@latest -g
+- npm install -s -g jshint
+- npm install -s
+script:
+- sudo apt-get purge elasticsearch
+- curl -O https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-5.5.3.deb && sudo dpkg -i --force-confnew elasticsearch-5.5.3.deb && sudo service elasticsearch start
+- wget -q --waitretry=1 --retry-connrefused -T 20 -O - http://127.0.0.1:9200
+- php artisan es:indices:create
+- php artisan migrate
+- npm run production
+- vendor/bin/phpmd app text codesize design naming unusedcode
+- vendor/bin/phpunit --testdox --coverage-text tests
+notifications:
+  slack:
+    rooms:
+      secure: "kusnjMUc8R6MO9DEHKUPfKyH6AMrmOinyOUIRTzq+UErSAhaOquEyxPldIkFHU6L0Epi3bN9V0weebVuTuJ7ix+im+tfJGnif9PCJKZH9jPbfNCYwG7AYGhcpNZ0L3cY6HAoOsrfbX765BsWc36qHLrbfJo3XZP7pTVH1Ccp8Knd8KHU36S8hYymbgJKydvvH5ey4czD3B6U5t0WWwSDkWxpQCqiVRKlyD/MxAt+SxqmKHvfGkAMqMsjeDeMVvPSTnNot6OfgvxjGUD+AMhtfXQ0NcucaWGggIGThzIEB9ycE5orbkOT22Tync+qR8KO9vtHkSPKdSPZPLx2jVF8+7abZc4LnIWPecf0cgd25Q6TrLh0K9xzMKWHbVXshN4qgjkqAblErxKBOvSpojMnLxeBLnH2CN/Aa5QE0QudG8+z9r3qXiaaAxUH5HtAHAdXr+/rvO4VbNR9W02Xd5cKlrYklsS0N+rLf2c/s/heQ34gWNIe/xgL0rhaMUW616nWOg48GsmuA4GSf16FHGFhktX4e8gc+3p4A8mayQpw5H+o0yqFrebBTugeWFAvVR/8JzVbC8AFrK6v6DbjOnINENSb8qq0EpGVnDguCI61vknr/QVckszMtyn7e7ruFGkrGsVVhPdHjz+k+QFf44EsCg6jCmYVrF1tOW/89DuAdck="
+    on_success: always
+    on_failure: always
+before_deploy:
+- rm .env
+- rm .env.travis
+- rm .env.example
+- touch .env
+- export ARTIFACT_PRE=$(echo $TRAVIS_REPO_SLUG | sed  s_^.*/__)
+- export ARTIFACT_NAME=${ARTIFACT_PRE}-${TRAVIS_BRANCH}-$(
+  echo ${TRAVIS_COMMIT} | cut -b 1-8
+  )-$(
+  date -u +%FT%T%Z
+  ).zip
+- export ELASTIC_BEANSTALK_LABEL=$(echo $ARTIFACT_NAME | sed s_.zip__)
+- zip $ARTIFACT_NAME -q -r * .[^.]*
+- ls -la $ARTIFACT_NAME
+branches:
+  only:
+    - master
+    - staging
+deploy:
+  - provider: elasticbeanstalk
+    skip_cleanup: true
+    zip_file: "$ARTIFACT_NAME"
+    access_key_id:
+      secure: "QyJKYMvGI/mUjF7Dk/iwCKljWgUvexlkaSH6b0aEZJFy8BzOXm+EspQNDkwraHQXrGub8ftZn0qA2kMkC5nmb3T2BvJ6sGjtqNhthW83sWcSG3ZFKmu7pDeAKiGRphUT5nsUUS1Np0FIm9qHw/hzAvhTPPb9JcatNhXRfR2CzBBv+5vdt+MXaqS6RdlnW+jnrgkXg0LbSCyMAiX/qySFbj3zMIg4vF7zXJLKADdWaev9X0qRrXYTgkbdsEEhsz0urpEJKRcsvvoceb9N8kao+tm36NpKAdiEgT3cVHJlCxHDRuygK4FOWXjay+WSLBF+CzXr38HRUH3m2pqtgkzvveESUcCjx9URJ3cagDEi3ZNzihWmj2P15WyKOU1ZIwXjOe42fYD46zvJyDmeC2kJV28Cp8hltLIUVNMd/xBn7RqxaZaAKHCeIH5RbApyLvJzOxpAcpRBNtgoIhndt1DVHhzjU6LOIKkjqJsqvdCAgimNCgKrK464jopaIc3+QcQyCrq8zEAm2EySxn61PPOYsJrBWwWsqUlHe8P7QSfgWNWYrvArVfnp6Kq3OUXT/xM0xZobKZ2OK3oQ8cgvNdnDTz+9HsXT3KOWkA2lWyrwOGcdOguo7+i4jJ29yl/3aPDVM0NtrmG12tB6wsqSbigyLdsQhInZuByHCYdCKooRMS8="
+    secret_access_key:
+      secure: moYQl0I+50AOFCz5S6T/TyrcAdzf7zf05SK+k9WBCVlnAY+OGjEBE8MwA7+bE9AZJoOtljVXc87kPHlCN8bPYJqwESUYgKGWmY4Nh5B+D8RjcGOvUX/fILSRfharaod0VM/sikvxDYRjvdYHp8GtYLpkBPV/yOFJg7HJ/pGEVSRW5hA0t3h2tW8LRH+q4WOHkoau+sq9UQ4o4qYWDJBrOZEsmJQcwH8fDTd4HzSr2XEMSP0uV2momHtvQZFfuIaVtIs1O4u2tY1i+2uU1/eI7rYcPmxZlNbDH889zOQZXCI2dflMky4rR6xZFjylgpkq5XXK00EQ3h+/JmA4ChXwnKP3Tn13WJeIEPfGxD4GyrV8PJvEiDUR0TejRijnBgerAiI4I83AFml5kFN7foruY2JaPqm76Lz0iG+jTzCwZeSMRGLw/G/CvNP6arZlEsckEZTKXdD+Yp5SNz/o6Aq850EQeEMJIhHWeozpnbkg5CF/K9cLS1d3h+OSzeaAT2l/4p63MwabDOnjKEbHM0ZFGIL6wc6fuAatkQK4khRaLKdBnEyzNKcCPqzlBoyP2X/yTlb6/V7LenO0tfZ8kQspci2+uNVAZ5k5pFmt7VBY2KiX8VxA0+68qy3PQsYHomTGlwUnNDjPoPhXske3SP/+i/smBGhu78OHUSFg6KL2Cnk=
+    region: us-east-1
+    app: meetup-sample
+    env: MeetupSample-env
+    bucket_name: elasticbeanstalk-us-east-1-732770059798
+    on:
+      branch: staging
+  - provider: elasticbeanstalk
+    skip_cleanup: true
+    zip_file: "$ARTIFACT_NAME"
+    access_key_id:
+      secure: "QyJKYMvGI/mUjF7Dk/iwCKljWgUvexlkaSH6b0aEZJFy8BzOXm+EspQNDkwraHQXrGub8ftZn0qA2kMkC5nmb3T2BvJ6sGjtqNhthW83sWcSG3ZFKmu7pDeAKiGRphUT5nsUUS1Np0FIm9qHw/hzAvhTPPb9JcatNhXRfR2CzBBv+5vdt+MXaqS6RdlnW+jnrgkXg0LbSCyMAiX/qySFbj3zMIg4vF7zXJLKADdWaev9X0qRrXYTgkbdsEEhsz0urpEJKRcsvvoceb9N8kao+tm36NpKAdiEgT3cVHJlCxHDRuygK4FOWXjay+WSLBF+CzXr38HRUH3m2pqtgkzvveESUcCjx9URJ3cagDEi3ZNzihWmj2P15WyKOU1ZIwXjOe42fYD46zvJyDmeC2kJV28Cp8hltLIUVNMd/xBn7RqxaZaAKHCeIH5RbApyLvJzOxpAcpRBNtgoIhndt1DVHhzjU6LOIKkjqJsqvdCAgimNCgKrK464jopaIc3+QcQyCrq8zEAm2EySxn61PPOYsJrBWwWsqUlHe8P7QSfgWNWYrvArVfnp6Kq3OUXT/xM0xZobKZ2OK3oQ8cgvNdnDTz+9HsXT3KOWkA2lWyrwOGcdOguo7+i4jJ29yl/3aPDVM0NtrmG12tB6wsqSbigyLdsQhInZuByHCYdCKooRMS8="
+    secret_access_key:
+      secure: moYQl0I+50AOFCz5S6T/TyrcAdzf7zf05SK+k9WBCVlnAY+OGjEBE8MwA7+bE9AZJoOtljVXc87kPHlCN8bPYJqwESUYgKGWmY4Nh5B+D8RjcGOvUX/fILSRfharaod0VM/sikvxDYRjvdYHp8GtYLpkBPV/yOFJg7HJ/pGEVSRW5hA0t3h2tW8LRH+q4WOHkoau+sq9UQ4o4qYWDJBrOZEsmJQcwH8fDTd4HzSr2XEMSP0uV2momHtvQZFfuIaVtIs1O4u2tY1i+2uU1/eI7rYcPmxZlNbDH889zOQZXCI2dflMky4rR6xZFjylgpkq5XXK00EQ3h+/JmA4ChXwnKP3Tn13WJeIEPfGxD4GyrV8PJvEiDUR0TejRijnBgerAiI4I83AFml5kFN7foruY2JaPqm76Lz0iG+jTzCwZeSMRGLw/G/CvNP6arZlEsckEZTKXdD+Yp5SNz/o6Aq850EQeEMJIhHWeozpnbkg5CF/K9cLS1d3h+OSzeaAT2l/4p63MwabDOnjKEbHM0ZFGIL6wc6fuAatkQK4khRaLKdBnEyzNKcCPqzlBoyP2X/yTlb6/V7LenO0tfZ8kQspci2+uNVAZ5k5pFmt7VBY2KiX8VxA0+68qy3PQsYHomTGlwUnNDjPoPhXske3SP/+i/smBGhu78OHUSFg6KL2Cnk=
+    region: us-east-1
+    app: meetup-sample
+    env: MeetupSample-env
+    bucket_name: elasticbeanstalk-us-east-1-732770059798
+    on:
+      branch: master
+
